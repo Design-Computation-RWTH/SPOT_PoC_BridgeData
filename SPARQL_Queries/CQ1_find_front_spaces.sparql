@@ -1,0 +1,92 @@
+# CQ 1: Which information is available for the front area of the asset?
+
+PREFIX : <http://example.org/>
+PREFIX spot: <https://w3id.org/spot#>
+PREFIX spot-am: <https://w3id.org/spot/am#>
+PREFIX reloc: <https://w3id.org/reloc#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+
+SELECT DISTINCT ?entitySpace ?relationLabel ?referenceSpace ?path
+WHERE {
+    # Get all entity spaces
+    ?entitySpace a/rdfs:subClassOf* spot:EntitySpace ;
+                 dcat:accessURL     ?path .
+    #get boundary point mappings of entity space
+    ?entitySpace spot:hasAppearance ?appearance .
+    ?appearance spot-am:hasBoundaryPointMapping ?bpm .
+
+    # OPTION 1: get bpms with direct front relations to asset space
+    {
+        ?bpm ?directionalProperty ?referenceSpace .
+        ?referenceSpace a spot:AssetSpace.
+        ?directionalProperty rdfs:subPropertyOf* reloc:front.
+    }
+    UNION
+    # OPTION 2: get bpm with any relation to a reference space, which lies completly in the front area of the asset
+    {
+        ?bpm ?directionalProperty ?referenceSpace .
+        ?referenceSpace a/rdfs:subClassOf* spot:EntitySpace ;
+                        spot:hasAppearance ?parentAppearance ;
+                        ?hasAxis           ?axis.
+
+        #get longitudinal axis of reference space
+        ?axis a spot:Axis .
+        ?axismapping spot-am:hasSourceAxis ?axis;
+                     spot-am:hasTargetAxis ?targetAxis ;
+                     spot-am:hasAxisRelationType spot-am:Codirectional.
+		?targetAxis spot:hasDirection spot:Rear.
+        # get min and max bps of longitudinal axis
+        ?axis spot-am:hasBoundaryPoint ?maxBP, ?minBP .
+        ?maxBP a spot-am:MaxBoundaryPoint.
+        ?minBP a spot-am:MinBoundaryPoint.
+        ?parentAppearance spot-am:hasBoundaryPointMapping ?parentBpmMin, ?parentBpmMax.
+        # get min bps of reference space at the front of the asset or front spans
+        ?parentBpmMin spot-am:hasSourcePoint ?minBP;
+                      ?parentMinRelType      ?grandParent1 .
+        FILTER (?grandParent1 = :NibelungenBridge || ?grandParent1 = :Span_1 || ?grandParent1 = :Span_2)
+        ?parentMinRelType rdfs:subPropertyOf* reloc:front.
+
+        #get max bps of reference space between the front and the center of the asset
+        {
+            #OPTION a: max bpm has front relation to asset space
+            {
+                ?parentBpmMax spot-am:hasSourcePoint ?maxBP;
+                              ?parentMaxRelType ?grandParent2 .
+                ?grandParent2 a spot:AssetSpace .
+
+                FILTER (?parentMaxRelType = reloc:containedInLongitudinalCenter ||
+                        EXISTS { ?parentMaxRelType rdfs:subPropertyOf* reloc:front }
+                )
+            }
+            UNION
+            #OPTION b: max bpm has any relation to front spans of the asset
+            {
+                ?parentBpmMax spot-am:hasSourcePoint ?maxBP;
+                              ?parentMaxRelType      ?grandParent2 .
+                ?parentMaxRelType rdfs:subPropertyOf* reloc:longitudinalAxisRelation.
+                FILTER (?grandParent2 = :Span_1 || ?grandParent2 = :Span_2)
+            }
+        }
+    }
+    UNION
+    #OPTION 3 get bpm with front relations to reference space which is at the front of the asset but can have any extension
+    {
+        ?bpm ?directionalProperty ?referenceSpace .
+        ?referenceSpace a/rdfs:subClassOf* spot:EntitySpace .
+        FILTER (?directionalProperty = reloc:containedInLongitudinalCenter ||
+                EXISTS { ?directionalProperty rdfs:subPropertyOf* reloc:front }
+                )
+
+        # check that the reference space is also at the front of the asset
+        ?referenceSpace spot:hasAppearance ?parentAppearance .
+        ?parentAppearance spot-am:hasBoundaryPointMapping ?parentBpm.
+        ?parentBpm ?parentRelType ?grandParent .
+        ?parentRelType rdfs:subPropertyOf* reloc:front
+        FILTER (?grandParent = :NibelungenBridge || ?grandParent = :Span_1 || ?grandParent = :Span_2)
+
+    }
+     ?directionalProperty rdfs:label ?relationLabel.
+    FILTER langMatches(lang(?relationLabel), "en")
+}
+

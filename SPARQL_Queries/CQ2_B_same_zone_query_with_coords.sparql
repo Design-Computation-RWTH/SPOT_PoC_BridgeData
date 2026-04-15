@@ -1,0 +1,112 @@
+# CQ 2 (by coords):What other resources provide information about the same location of the asset as the view "AUSSPARUNGEN Area Space"?
+
+PREFIX : <http://example.org/>
+PREFIX spot: <https://w3id.org/spot#>
+PREFIX reloc: <https://w3id.org/reloc#>
+PREFIX spot-am: <https://w3id.org/spot/am#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+#SELECT ?inputSpace ?srcAxisVar ?tAxisVar ?coordVarAdj ?directionalProperty ?otherSpace ?srcAxisOther ?coordOtherAdj ?directionalPropertyO
+#SELECT DISTINCT ?tAxisVar ?coordVar ?otherSpace ?srcAxisOther ?relTypeOther ?tAxisOther ?coordOther ?directionalPropertyO ?path
+SELECT DISTINCT  ?otherSpace ?path
+WHERE {
+  #Define input space via label
+  ?var rdfs:label "AUSSPARUNGEN Area Space" ;
+              spot:hasAppearance ?appVar .
+  ?appVar spot:appearsIn ?assetSpace .
+  ?assetSpace a spot:AssetSpace .
+  #Get Axis Mappings of space to asset space
+  ?appVar spot-am:hasAxisMapping ?amVar .
+  ?amVar spot-am:hasSourceAxis ?srcAxisVar ;
+        spot-am:hasTargetAxis ?tAxisVar  .
+  # get boundary points of var space axis
+  ?srcAxisVar spot-am:hasBoundaryPoint ?bpVar .
+  ?appVar spot-am:hasBoundaryPointMapping ?bpmVar .
+  ?bpmVar spot-am:hasSourcePoint ?bpVar .
+
+  # get location of boundary points
+  OPTIONAL { ?bpmVar spot-am:hasNormalizedCoordinateValue ?coordVarRaw . BIND(xsd:decimal(?coordVarRaw) AS ?coordVar_direct) }
+  OPTIONAL { ?bpmVar ?directionalProperty ?refSpace .
+  ?directionalProperty rdfs:subPropertyOf*  reloc:directionalRelation. }
+
+  # If only reloc prop -> bind prop as template coordinate
+	BIND(
+    IF(BOUND(?coordVar_direct), ?coordVar_direct,
+      IF(?directionalProperty = reloc:containedInFront, 0.16,
+      IF(?directionalProperty = reloc:disjointFront, -0.3,
+      IF(?directionalProperty = reloc:disjointRear, 1.3,
+      IF(?directionalProperty = reloc:meetFront, 0,
+      IF(?directionalProperty = reloc:meetRear, 1,
+      IF(?directionalProperty = reloc:containedInRear, 0.83,
+      IF(?directionalProperty = reloc:meetLeft,1,
+      IF(?directionalProperty = reloc:disjointLeft, 1.3,
+      IF(?directionalProperty = reloc:disjointRight, -0.3,
+      IF(?directionalProperty = reloc:meetRight, 0,
+      IF(?directionalProperty = reloc:containedInLeft, 0.83,
+      IF(?directionalProperty = reloc:containedInRight, 0.16,
+      IF(?directionalProperty = reloc:meetBottom, 0,
+      IF(?directionalProperty = reloc:meetTop, 1,
+      IF(?directionalProperty = reloc:disjointTop, 1.3,
+      IF(?directionalProperty = reloc:disjointBottom, -0.3,
+      IF(?directionalProperty = reloc:containedInTop, 0.83,
+      IF(?directionalProperty = reloc:containedInBottom, 0.16,
+      #Fallback 0.5
+      0.5))))))))))))))))))
+  ) AS ?coordVar )
+
+  # Based on mapped target axis -> find other spaces mapped to this target axis
+  ?otherSpace spot:hasAppearance ?appOther ;
+              dcat:accessURL     ?path .
+  ?appOther spot-am:hasAxisMapping ?amOther .
+  ?amOther spot-am:hasTargetAxis ?tAxisOther;
+           spot-am:hasSourceAxis ?srcAxisOther .
+
+   #allow as well target axes that are the same as the target axis of the source space
+   OPTIONAL{?tAxisParallel a spot:Axis.
+    		?am_same spot-am:hasSourceAxis ?tAxisParallel;
+        	spot-am:hasTargetAxis ?tAxisVar;
+        	spot-am:hasAxisRelationType spot-am:Codirectional.
+    }
+    FILTER(?tAxisOther IN (?tAxisParallel, ?tAxisVar))
+
+  # get related boundary point mappings for other axis
+  ?srcAxisOther spot-am:hasBoundaryPoint ?bpOther .
+  ?appOther spot-am:hasBoundaryPointMapping ?bpmOther .
+  ?bpmOther spot-am:hasSourcePoint ?bpOther .
+
+  # get reloc prop and/or Coordinate of other space boundary points
+  OPTIONAL { ?bpmOther spot-am:hasNormalizedCoordinateValue ?coordOtherRaw . BIND(xsd:decimal(?coordOtherRaw) AS ?coordOtherDirect) }
+  OPTIONAL { ?bpmOther ?directionalPropertyO ?refSpaceO .
+  ?directionalPropertyO rdfs:subPropertyOf*  reloc:directionalRelation. }
+
+  # If only reloc prop -> bind template coordinate
+	BIND(
+    IF(BOUND(?coordOtherDirect), ?coordOtherDirect,
+      IF(?directionalPropertyO = reloc:containedInFront, 0.16,
+      IF(?directionalPropertyO = reloc:disjointFront, -0.3,
+      IF(?directionalPropertyO = reloc:disjointRear, 1.3,
+      IF(?directionalPropertyO = reloc:meetFront, 0,
+      IF(?directionalPropertyO = reloc:meetRear, 1,
+      IF(?directionalPropertyO = reloc:containedInRear, 0.83,
+      IF(?directionalPropertyO = reloc:meetLeft,1,
+      IF(?directionalPropertyO = reloc:disjointLeft, 1.3,
+      IF(?directionalPropertyO = reloc:disjointRight, -0.3,
+      IF(?directionalPropertyO = reloc:meetRight, 0,
+      IF(?directionalPropertyO = reloc:containedInLeft, 0.83,
+      IF(?directionalPropertyO = reloc:containedInRight, 0.16,
+      IF(?directionalPropertyO = reloc:meetBottom, 0,
+      IF(?directionalPropertyO = reloc:meetTop, 1,
+      IF(?directionalPropertyO = reloc:disjointTop, 1.3,
+      IF(?directionalPropertyO = reloc:disjointBottom, -0.3,
+      IF(?directionalPropertyO = reloc:containedInTop, 0.83,
+      IF(?directionalPropertyO = reloc:containedInBottom, 0.16,
+         0.5))))))))))))))))))
+  ) AS ?coordOther )
+
+  # Compare coordinate of other space with coordinate of input space for that axis, threshold can be adjusted
+   FILTER( ABS(?coordOther - ?coordVar) < 0.12 )
+   FILTER (?otherSpace != ?var)
+}
+ORDER BY ?otherSpace

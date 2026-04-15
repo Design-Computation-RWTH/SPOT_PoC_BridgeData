@@ -1,0 +1,26 @@
+#  CQ 4 : In which document is this 'LÄNGSSCHNITT' located, and where on that document?
+PREFIX : <http://example.org/>
+PREFIX spot: <https://w3id.org/spot#>
+PREFIX reloc: <https://w3id.org/reloc#>
+PREFIX spot-am: <https://w3id.org/spot/am#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+
+SELECT DISTINCT ?var ?relationLabel ?refSpace ?refSpaceDesc ?path
+WHERE {
+  #define variable input via label
+  ?var rdfs:label "LÄNGSSCHNITT Vertical Area Space";
+       spot:hasAppearance ?appVar .
+  ?appVar a spot:DocumentAppearance .
+  # get location of variable space on document space
+  ?appVar spot-am:hasBoundaryPointMapping ?bpmVar .
+  ?bpmVar ?directionalProperty ?refSpace.
+  ?directionalProperty rdfs:subPropertyOf*  reloc:directionalRelation;
+                       rdfs:label           ?relationLabel.
+  FILTER langMatches(lang(?relationLabel), "en")
+  # get name and path of document space
+  ?refSpace dcat:accessURL ?path ;
+            rdfs:comment ?refSpaceDesc.
+}
+
+

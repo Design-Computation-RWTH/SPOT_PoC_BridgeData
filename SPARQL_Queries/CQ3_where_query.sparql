@@ -1,0 +1,65 @@
+# CQ3: Where was \textit{this picture} taken?
+PREFIX : <http://example.org/>
+PREFIX spot: <https://w3id.org/spot#>
+PREFIX reloc: <https://w3id.org/reloc#>
+PREFIX spot-am: <https://w3id.org/spot/am#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+
+SELECT ?x
+       (GROUP_CONCAT(DISTINCT ?relationLabel; separator=", ") AS ?dirProps)
+       ?refSpace
+       (GROUP_CONCAT(DISTINCT ?relationLabelParent; separator=", ") AS ?dirPropParents)
+       ?assetSpaceRef
+       ?path
+WHERE {
+  # Filter for Image, instead of one input picture
+  ?x a spot:PointSpace ;
+     dcterms:type "image";
+     dcat:accessURL ?path ;
+     spot:hasAppearance ?appPic .
+
+  {   # OPTION 1: direct reference of picture to asset space
+      {
+      ?appPic a spot:AssetAppearance ;
+              spot:appearsIn ?refSpace ;
+              spot-am:hasBoundaryPointMapping ?bpmPic .
+      ?bpmPic ?directionalProperty ?refSpace .
+      ?directionalProperty rdfs:subPropertyOf* reloc:directionalRelation;
+                           rdfs:label ?relationLabel.
+      FILTER langMatches(lang(?relationLabel), "en")
+      }
+
+    UNION
+      # OPTION 2: indirect reference of picture to asset space via other reference space
+      {
+      ?appPic a spot:EntityAppearance ;
+              spot:appearsIn ?refSpace ;
+              spot-am:hasBoundaryPointMapping ?bpmPic ;
+              spot-am:hasAxisMapping ?amPic  .
+
+      ?refSpace spot:hasAppearance ?parentAppearance  .
+      ?parentAppearance a spot:AssetAppearance ;
+                        spot-am:hasBoundaryPointMapping ?bpmPar .
+
+      # get directional property of picture to reference space
+      ?bpmPic ?directionalProperty ?refSpace .
+      ?directionalProperty rdfs:subPropertyOf* reloc:directionalRelation;
+                           rdfs:label ?relationLabel.
+      FILTER langMatches(lang(?relationLabel), "en")
+
+      ?amPic spot-am:hasTargetAxis ?targetAxis .
+
+      # get directional property of reference appearance to asset space for same axis
+      ?targetAxis spot-am:hasBoundaryPoint ?bpPar .
+      ?bpmPar spot-am:hasSourcePoint ?bpPar .
+      ?bpmPar ?directionalPropertyParent ?assetSpaceRef .
+      ?directionalPropertyParent rdfs:subPropertyOf* reloc:directionalRelation;
+                                 rdfs:label ?relationLabelParent.
+      FILTER langMatches(lang(?relationLabelParent), "en")
+      }
+  }
+}
+GROUP BY ?x ?refSpace ?assetSpaceRef ?path
+ORDER BY ?x

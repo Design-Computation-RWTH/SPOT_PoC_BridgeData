@@ -1,0 +1,151 @@
+{
+  "point_cloud_volume_full":
+{
+  "class": "VolumeSpace",
+  "name": "Full_Reconstruction_PointCloud",
+  "comment": "This standardized coordinate system is right-handed and centered on the bridge deck, with the x-axis aligned longitudinally along the bridge, the y-axis aligned transversely, and the z-axis pointing upwards.",
+  "boundary_extent": {
+    "comment": "Maximum boundary PCD local coordinate system",
+    "X": {
+      "Min": -6.576,
+      "Max": 2021
+    },
+    "Y": {
+      "Min": -5.188,
+      "Max": 2.296
+    },
+    "Z": {
+      "Min": -0.581,
+      "Max": 0.681
+    }
+  },
+  "asset_appearances": [
+  ],
+  "document_appearances": [],
+  "entity_appearances": []
+},
+  "point_cloud_volume_trimmed":
+{
+  "class": "VolumeSpace",
+  "name": "Trimmed_Reconstruction_PointCloud",
+  "comment": "Part of the reconstruction point cloud that has been trimmed to fit the bounding box of the Nibelungen Bridge, with the same coordinate system as the full reconstruction. Reference space for the cameras.",
+  "boundary_extent": {
+    "comment": "boundaries of bridge in PCD local coordinate system",
+    "X": {
+      "Min": -1.1679999999999997,
+      "Max": 1.1679999999999997
+    },
+    "Y": {
+      "Min":-0.075,
+      "Max": 0.07400000000000002
+    },
+    "Z": {
+      "Min": -0.14,
+      "Max": 0.07600000000000007
+    }
+  },
+  "asset_appearances": [
+    {
+      "axis_mappings": [
+        {
+          "source": {
+            "axis": "X"
+          },
+          "target": {
+            "object": "NibelungenBridge",
+            "axis": "X",
+            "inverse": false
+          },
+          "accuracy": "Approximate"
+        },
+        {
+          "source": {
+            "axis": "Y"
+          },
+          "target": {
+            "object": "NibelungenBridge",
+            "axis": "Y",
+            "inverse": false
+          },
+          "accuracy": "Approximate"
+        },
+        {
+          "source": {
+            "axis": "Z"
+          },
+          "target": {
+            "object": "NibelungenBridge",
+            "axis": "Z",
+            "inverse": false
+          },
+          "accuracy": "Approximate"
+        }
+      ],
+      "boundary_point_mappings": [
+        {
+          "source": {
+            "axis": "X",
+            "boundary": "Min"
+          },
+          "reloc_relation": "meetFront",
+          "reloc_relation_target": "NibelungenBridge",
+          "normalized_coordinate":0,
+          "accuracy": "Approximate"
+        },
+        {
+          "source": {
+            "axis": "X",
+            "boundary": "Max"
+          },
+          "reloc_relation": "meetRear",
+          "reloc_relation_target": "NibelungenBridge",
+           "normalized_coordinate":1,
+          "accuracy": "Approximate"
+        },
+        {
+          "source": {
+            "axis": "Y",
+            "boundary": "Min"
+          },
+          "reloc_relation": "meetRight",
+          "reloc_relation_target": "NibelungenBridge",
+           "normalized_coordinate":0,
+          "accuracy": "Approximate"
+        },
+        {
+          "source": {
+            "axis": "Y",
+            "boundary": "Max"
+          },
+          "reloc_relation": "meetLeft",
+          "reloc_relation_target": "NibelungenBridge",
+          "normalized_coordinate":1,
+          "accuracy": "Approximate"
+        },
+        {
+          "source": {
+            "axis": "Z",
+            "boundary": "Min"
+          },
+          "reloc_relation": "meetBottom",
+          "reloc_relation_target": "NibelungenBridge",
+          "normalized_coordinate":0,
+          "accuracy": "Approximate"
+        },
+        {
+          "source": {
+            "axis": "Z",
+            "boundary": "Max"
+          },
+          "reloc_relation": "meetTop",
+          "reloc_relation_target": "NibelungenBridge",
+           "normalized_coordinate":1,
+          "accuracy": "Approximate"
+        }
+      ]
+    }
+  ],
+  "document_appearances": [],
+  "entity_appearances": []
+}
+}

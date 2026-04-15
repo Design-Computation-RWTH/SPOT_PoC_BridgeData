@@ -1,0 +1,20 @@
+{
+  "asset": {
+    "class": "AssetSpace",
+    "name": "NibelungenBridge",
+    "axes_directions": {
+      "X": "Rear",
+      "Y": "Left",
+      "Z": "Top"
+    },
+    "metadata": {
+                "rel_access_url": "nibelungen_asset_sketch.png",
+                "filetype": "png",
+                "dct_type": "image",
+                "comment": "The Asset is the 'Strombrücke' (central part, crossing the Rhine) of the Nibelungenbridge in Worms"
+            }
+  },
+  "document_spaces":[
+  ],
+  "entity_spaces": []
+}
