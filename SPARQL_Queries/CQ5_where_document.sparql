@@ -1,4 +1,4 @@
-#  CQ 4 : In which document is this 'LÄNGSSCHNITT' located, and where on that document?
+#  CQ 5 : In which document is this 'LÄNGSSCHNITT' located, and where on that document?
 PREFIX : <http://example.org/>
 PREFIX spot: <https://w3id.org/spot#>
 PREFIX reloc: <https://w3id.org/reloc#>
