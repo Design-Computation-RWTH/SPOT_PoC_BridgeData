@@ -29,10 +29,9 @@ WHERE {
   #filter for other entity spaces with same relation to same reference space
   ?bpmOther ?directionalProperty ?refSpaceOther.
 
-  # refSpaceOther is same as refSpace, or space with same boundaries (asset = trimmed point cloud) (simplified here)
-  FILTER ( IF(?refSpace
-           IN (:Trimmed_Reconstruction_PointCloud, ?assetSpace),
-           ?refSpaceOther IN (?refSpace, ?assetSpace, :Trimmed_Reconstruction_PointCloud),
+  # refSpaceOther is same as refSpace, or space with same boundaries
+   FILTER ( IF(?refSpace IN (?assetSpace),
+           ?refSpaceOther IN (?refSpace, ?assetSpace),
                 ?refSpaceOther = ?refSpace ) )
 
   FILTER(?otherEntitySpace != ?var)

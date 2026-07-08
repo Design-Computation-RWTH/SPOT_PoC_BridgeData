@@ -99,8 +99,6 @@ class AxisMapping(RDFSubject):
             g.add((self.uri, SPOT_AM.hasAxisRelationType, self.axis_relation_type))
         if self.accuracy:
             g.add((self.uri, SPOT_AM.hasAccuracy, self.accuracy))
-        if self.angle:
-            g.add((self.uri, SPOT_AM.hasSourceToTargetAngle, Literal(self.angle)))
 
 
 @dataclass
@@ -116,9 +114,6 @@ class BoundaryPointMapping(RDFSubject):
         g.add((self.uri, SPOT_AM.hasSourcePoint, self.source_point))
         if self.reloc_relation:
             g.add((self.uri, self.reloc_relation, self.reloc_relation_target))
-        if self.normalized_value is not None:
-            g.add(
-                (self.uri, SPOT_AM.hasNormalizedCoordinateValue, Literal(self.normalized_value, datatype=XSD.decimal)))
         if self.accuracy:
             g.add((self.uri, SPOT_AM.hasAccuracy, self.accuracy))
 

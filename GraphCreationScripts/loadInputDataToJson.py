@@ -81,7 +81,9 @@ def get_axis_dir_in_asset(ref_axis, ref_space_name):
             asset_axis_dir = bridge_json["asset"]["axes_directions"][asset_axis]
             return asset_axis_dir,inverse
 
-
+def get_asset_axis_dir(asset_axis):
+    asset_axis_dir = bridge_json["asset"]["axes_directions"][asset_axis]
+    return asset_axis_dir
 
 
 def derive_reloc_relation_from_norm_coord(parent_dir, coord):
@@ -262,7 +264,7 @@ def normalize_abs_coord(coord, min, max):
     norm_coord = (coord - min) / (max - min)
     return norm_coord
 
-def create_camera_point_space(name, ref_space, orientation_dict, coord_dict, ref_space_boundaries, bp_accuracy):
+def create_camera_point_space(name, asset_name, orientation_dict, coord_dict, ref_space_boundaries, bp_accuracy):
     point_space_dict = {
         "class": "PointSpace",
         "name": name,
@@ -270,14 +272,14 @@ def create_camera_point_space(name, ref_space, orientation_dict, coord_dict, ref
         "asset_appearances": [],
         "entity_appearances": [],
     }
-    ent_app = {
-        "ref_entity": ref_space,
+    asset_app = {
+        "ref_entity": asset_name,
         "axis_mappings": [],
         "boundary_point_mappings": []
     }
 
     for source_axis, li in orientation_dict.items():
-        pcd_axis = li[0]
+        asset_axis = li[0]
         cosine_angle = li[1]
         angle = abs(cosine_angle)
         # define inverse by sign
@@ -300,27 +302,27 @@ def create_camera_point_space(name, ref_space, orientation_dict, coord_dict, ref
                 "axis": source_axis.upper(),
             },
             "target": {
-                "object": ref_space,
-                "axis": pcd_axis.upper(),
+                "object": asset_name,
+                "axis": asset_axis.upper(),
                 "inverse": inverse
             },
             "angle":angle,
             "accuracy": acc
         }
-        ent_app["axis_mappings"].append(axis_mp)
+        asset_app["axis_mappings"].append(axis_mp)
 
-    for pcd_axis, coord in coord_dict.items():
-        normalized_coord = normalize_abs_coord(coord, ref_space_boundaries[pcd_axis]["Min"],
-                                               ref_space_boundaries[pcd_axis]["Max"])
+    for asset_axis, coord in coord_dict.items():
+        normalized_coord = normalize_abs_coord(coord, ref_space_boundaries[asset_axis]["Min"],
+                                               ref_space_boundaries[asset_axis]["Max"])
         print(normalized_coord)
-        axis_dir = get_axis_dir_in_asset(pcd_axis, ref_space)[0]
+        axis_dir = get_asset_axis_dir(asset_axis)
         print(axis_dir)
         reloc_prop = derive_reloc_relation_from_norm_coord(axis_dir, normalized_coord)
         print(reloc_prop)
 
 
         # get related source axis to pcd axis
-        source_axis_map = [map for map in ent_app["axis_mappings"] if map["target"]["axis"] == pcd_axis]
+        source_axis_map = [map for map in asset_app["axis_mappings"] if map["target"]["axis"] == asset_axis]
         source_axis = source_axis_map[0]["source"]["axis"]
 
         bp_mp = {
@@ -328,15 +330,15 @@ def create_camera_point_space(name, ref_space, orientation_dict, coord_dict, ref
                 "axis": source_axis,
                 "boundary": "BoundaryPoint"
             },
-            "reloc_relation_target": ref_space,
+            "reloc_relation_target": asset_name,
             "reloc_relation": reloc_prop,
             "normalized_coordinate": normalized_coord,
             "accuracy": bp_accuracy
         }
 
-        ent_app["boundary_point_mappings"].append(bp_mp)
+        asset_app["boundary_point_mappings"].append(bp_mp)
 
-    point_space_dict["entity_appearances"].append(ent_app)
+    point_space_dict["asset_appearances"].append(asset_app)
     return point_space_dict
 
 #war nur angelegt für bridge point cloud space, brauchen wir gerade nicht
@@ -538,7 +540,9 @@ def add_asset_subSpaces(nr_of_spans):
 
 
 
-def process_input_data(parent_folder_name, output_filename=None):
+def process_input_data(parent_folder_name, all_plans=True, output_filename=None):
+    # get Asset Name
+    asset_name = bridge_json["asset"]["name"]
     # create AssetSubSpaces
     add_asset_subSpaces(4)
 
@@ -548,6 +552,10 @@ def process_input_data(parent_folder_name, output_filename=None):
         for fname in os.listdir(plans_dir):
             if not fname.endswith(".json"):
                 continue
+            if not all_plans:
+                # nur diese spezifischen Pläne zulassen, sonst überspringen
+                if fname not in ("002.json", "6292_202e.json"):
+                    continue
             json_path = os.path.join(plans_dir, fname)
             with open(json_path, encoding="utf-8") as f:
                 data = json.load(f)
@@ -566,6 +574,10 @@ def process_input_data(parent_folder_name, output_filename=None):
     if os.path.exists(singleviews_dir):
         for folder in os.listdir(singleviews_dir): #folder name = reference document name
             print(folder)
+            if not all_plans:
+                # nur diese Order der spezifischen Pläne zulassen, sonst überspringen
+                if folder not in ("002", "6292_202e"):
+                    continue
             folder_path = os.path.join(singleviews_dir, folder)
             if os.path.isdir(folder_path):
                 for fname in os.listdir(folder_path):
@@ -639,25 +651,9 @@ def process_input_data(parent_folder_name, output_filename=None):
     pcd_path = os.path.join(parent_folder_name, "PointCloud/pcd_meta.json")
     with open(pcd_path, "r", encoding="utf-8") as f:
         pcd_meta = json.load(f)
-
-    #full / original point cloud space
-    pcd_entry_full = pcd_meta["point_cloud_volume_full"]
-    pcd_full_name = pcd_entry_full["name"]
-    pcd_full_boundaries = pcd_entry_full["boundary_extent"]
-    pcd_entry_full.pop("boundary_extent")
-
-    add_space_metadata("Input/PointCloud", pcd_full_name, pcd_entry_full)
-    bridge_json["entity_spaces"].append(pcd_entry_full)
-
-    # trimmed point cloud space, only showing bridge
+    # bounding volume of bridge structure in point cloud
     pcd_entry_trim = pcd_meta["point_cloud_volume_trimmed"]
-    pcd_trim_name = pcd_entry_trim["name"]
     pcd_trim_boundaries = pcd_entry_trim["boundary_extent"]
-    pcd_entry_trim.pop("boundary_extent")
-
-    add_space_metadata("Input/PointCloud", pcd_trim_name, pcd_entry_trim)
-    bridge_json["entity_spaces"].append(pcd_entry_trim)
-
 
     # Load camera parameters
     pictures_dir = os.path.join(parent_folder_name, "Pictures")
@@ -689,7 +685,7 @@ def process_input_data(parent_folder_name, output_filename=None):
                 "Z": pic_center_coords[2],
             }
 
-            cam_point_space_dict = create_camera_point_space(point_space_name, pcd_trim_name, orientation, pic_center_coords_dict,pcd_trim_boundaries, "Approximate")
+            cam_point_space_dict = create_camera_point_space(point_space_name, asset_name, orientation, pic_center_coords_dict,pcd_trim_boundaries, "Approximate")
             add_space_metadata(pictures_dir, fname, cam_point_space_dict)
 
             bridge_json["entity_spaces"].append(cam_point_space_dict)
@@ -701,4 +697,5 @@ def process_input_data(parent_folder_name, output_filename=None):
         json.dump(bridge_json, f, indent=4, ensure_ascii=False)
 
     return bridge_json_path
+
 

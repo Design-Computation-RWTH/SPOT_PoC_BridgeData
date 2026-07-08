@@ -1,4 +1,4 @@
-# SPARQL results - CQ 4
+# SPARQL results - CQ 5
 In which document is this 'LÄNGSSCHNITT' located, and where on that document?
 - LÄNGSSCHNITT (Input space):
 - ![LÄNGSSCHNITT.jpg](thumbs/ef2d07241d0469905e2016be1345d07f.jpg)

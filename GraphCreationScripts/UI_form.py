@@ -4,7 +4,9 @@
 # Am Layout der Mock-ups orientiert.
 
 import json
+import copy
 import os
+import re
 import tempfile
 import shutil
 from pathlib import Path
@@ -57,6 +59,12 @@ class SpotEditorApp:
         # Auswahl des zu bearbeitenden Space (Dokument oder Entity)
         default_space = self.editable_space_names[0] if self.editable_space_names else ""
         self.current_space_name = tk.StringVar(value=default_space)
+        self.entity_appearance_var = tk.StringVar(value="")
+        self.entity_appearance_name_var = tk.StringVar(value="")
+        self.entity_appearance_copy_var = tk.BooleanVar(value=True)
+        self.asset_appearance_var = tk.StringVar(value="")
+        self.asset_appearance_name_var = tk.StringVar(value="")
+        self.asset_appearance_copy_var = tk.BooleanVar(value=True)
 
         self.notebook = ttk.Notebook(self.root)
         self.frame_basics = ttk.Frame(self.notebook)
@@ -139,14 +147,7 @@ class SpotEditorApp:
         # Optional: Default-Klasse vorwählen
         # self.space_class_var.set("VolumeSpace")
 
-        # History leeren, da es den Space noch nicht gibt
-        self.history_list.config(state="normal")
-        self.history_list.delete("1.0", "end")
-        self.history_list.insert("end",
-                                 "Neuen Space anlegen: Bitte Name und Space Class eingeben und 'Submit' drücken.\n")
-        self.history_list.config(state="disabled")
-
-        # Hinweis im Status
+        # Hinweis im Status (history removed)
         self.status_var.set("Neuen Space anlegen – Name und Space Class wählen, dann Submit.")
 
     def find_space(self, name):
@@ -184,11 +185,17 @@ class SpotEditorApp:
         ref_type = self.space_kind(ref_space)
         if ref_type == "asset":
             current_space.setdefault("asset_appearances", [])
-            if not current_space["asset_appearances"]:
-                if not create_if_missing:
-                    return None
-                current_space["asset_appearances"].append({"axis_mappings": [], "boundary_point_mappings": []})
-            return current_space["asset_appearances"][0]
+            apps = [app for app in current_space["asset_appearances"] if app.get("ref_asset", ref_name) == ref_name]
+            selected_idx = self.get_selected_asset_appearance_index()
+            if apps:
+                if 0 <= selected_idx < len(apps):
+                    return apps[selected_idx]
+                return apps[0]
+            if not create_if_missing:
+                return None
+            app = {"ref_asset": ref_name, "name": "Appearance", "axis_mappings": [], "boundary_point_mappings": []}
+            current_space["asset_appearances"].append(app)
+            return app
         elif ref_type == "document":
             current_space.setdefault("document_appearances", [])
             for app in current_space["document_appearances"]:
@@ -201,9 +208,12 @@ class SpotEditorApp:
             return app
         elif ref_type == "entity":
             current_space.setdefault("entity_appearances", [])
-            for app in current_space["entity_appearances"]:
-                if app.get("ref_entity") == ref_name:
-                    return app
+            apps = [app for app in current_space["entity_appearances"] if app.get("ref_entity") == ref_name]
+            selected_idx = self.get_selected_entity_appearance_index()
+            if apps:
+                if 0 <= selected_idx < len(apps):
+                    return apps[selected_idx]
+                return apps[0]
             if not create_if_missing:
                 return None
             app = {"ref_entity": ref_name, "axis_mappings": [], "boundary_point_mappings": []}
@@ -240,11 +250,188 @@ class SpotEditorApp:
         else:
             self.reference_space_var.set("")
             self.relation_target_var.set("")
+        self.refresh_appearance_selector()
+        self.refresh_existing_appearances_box()
         self.update_reference_info()
         self.update_history_box()
         self.refresh_axis_tree()
         self.refresh_bnd_tree()
         self.update_dual_preview()  # <<< Vorschau aktualisieren
+
+    def get_entity_appearances_for_reference(self, current_space=None, ref_name=None):
+        current_space = current_space or self.current_space
+        ref_name = (ref_name if ref_name is not None else self.reference_space_var.get()).strip()
+        if not current_space or not ref_name:
+            return []
+        return [app for app in current_space.get("entity_appearances", []) if app.get("ref_entity") == ref_name]
+
+    def get_asset_appearances(self, current_space=None, ref_name=None):
+        current_space = current_space or self.current_space
+        if not current_space:
+            return []
+        ref_name = (ref_name if ref_name is not None else self.reference_space_var.get()).strip()
+        return [app for app in current_space.get("asset_appearances", []) if app.get("ref_asset", ref_name) == ref_name]
+
+    def get_selected_index_from_value(self, value):
+        match = re.match(r"^(\d+)\s*:", (value or "").strip())
+        if match:
+            try:
+                return max(0, int(match.group(1)) - 1)
+            except ValueError:
+                return 0
+        return 0
+
+    def get_selected_entity_appearance_index(self):
+        return self.get_selected_index_from_value(self.entity_appearance_var.get())
+
+    def get_selected_asset_appearance_index(self):
+        return self.get_selected_index_from_value(self.asset_appearance_var.get())
+
+    def refresh_appearance_selector(self):
+        if not hasattr(self, "appearance_frame"):
+            return
+        current_space = self.current_space
+        ref_name = self.reference_space_var.get().strip() if hasattr(self, "reference_space_var") else ""
+        ref_space = self.find_space(ref_name) if ref_name else None
+        is_entity_space = bool(current_space) and self.space_kind(current_space) == "entity"
+        ref_type = self.space_kind(ref_space)
+
+        if not is_entity_space or ref_type not in ("asset", "entity"):
+            self.appearance_frame.grid_remove()
+            self.asset_appearance_var.set("")
+            self.asset_appearance_name_var.set("")
+            self.entity_appearance_var.set("")
+            self.entity_appearance_name_var.set("")
+            self.asset_appearance_combo["values"] = []
+            self.entity_appearance_combo["values"] = []
+            self.asset_appearance_combo.configure(state="disabled")
+            self.entity_appearance_combo.configure(state="disabled")
+            self.asset_appearance_name_entry.configure(state="disabled")
+            self.entity_appearance_name_entry.configure(state="disabled")
+            self.asset_appearance_create_btn.configure(state="disabled")
+            self.entity_appearance_create_btn.configure(state="disabled")
+            self.existing_appearances_visible.set(False)
+            self.existing_appearances_toggle_btn.configure(state="disabled")
+            self.existing_appearances_body.grid_remove()
+            return
+
+        self.appearance_frame.grid()
+        self.existing_appearances_toggle_btn.configure(state="normal")
+        if ref_type == "asset":
+            self.asset_appearance_frame.grid()
+            self.entity_appearance_frame.grid_remove()
+            apps = self.get_asset_appearances(current_space, ref_name)
+            values = []
+            for i, app in enumerate(apps, 1):
+                label = app.get("name") or "Appearance"
+                values.append(f"{i}: {label}")
+            self.asset_appearance_combo.configure(state="readonly")
+            self.asset_appearance_name_entry.configure(state="normal")
+            self.asset_appearance_create_btn.configure(state="normal")
+            self.asset_appearance_combo["values"] = values
+            if values:
+                current = self.asset_appearance_var.get().strip()
+                if current not in values:
+                    self.asset_appearance_var.set(values[0])
+            else:
+                self.asset_appearance_var.set("")
+        else:
+            self.asset_appearance_frame.grid_remove()
+            self.entity_appearance_frame.grid()
+            apps = self.get_entity_appearances_for_reference(current_space, ref_name)
+            values = []
+            for i, app in enumerate(apps, 1):
+                label = app.get("name") or "Appearance"
+                values.append(f"{i}: {label}")
+            self.entity_appearance_combo.configure(state="readonly")
+            self.entity_appearance_name_entry.configure(state="normal")
+            self.entity_appearance_create_btn.configure(state="normal")
+            self.entity_appearance_combo["values"] = values
+            if values:
+                current = self.entity_appearance_var.get().strip()
+                if current not in values:
+                    self.entity_appearance_var.set(values[0])
+            else:
+                self.entity_appearance_var.set("")
+        self.refresh_existing_appearances_box()
+
+    def on_entity_appearance_selected(self, event=None):
+        self.selected_axis_index = None
+        self.selected_bnd_index = None
+        self.refresh_existing_appearances_box()
+
+    def on_asset_appearance_selected(self, event=None):
+        self.selected_axis_index = None
+        self.selected_bnd_index = None
+        self.refresh_existing_appearances_box()
+
+    def create_asset_appearance(self):
+        if not self.current_space or self.space_kind(self.current_space) != "entity":
+            messagebox.showwarning("Hinweis", "Bitte einen Entity-Space auswählen.")
+            return
+        ref_name = self.reference_space_var.get().strip()
+        ref_space = self.find_space(ref_name) if ref_name else None
+        if self.space_kind(ref_space) != "asset":
+            messagebox.showwarning("Hinweis", "Bitte einen Asset Reference Space auswählen.")
+            return
+
+        new_app_name = self.asset_appearance_name_var.get().strip() or "Appearance"
+        new_app = {"ref_asset": ref_name, "name": new_app_name, "axis_mappings": [], "boundary_point_mappings": []}
+        if self.asset_appearance_copy_var.get():
+            src_app = self.get_or_create_appearance(self.current_space, ref_name, create_if_missing=False)
+            if src_app:
+                new_app["axis_mappings"] = copy.deepcopy(src_app.get("axis_mappings", []))
+                new_app["boundary_point_mappings"] = copy.deepcopy(src_app.get("boundary_point_mappings", []))
+        self.current_space.setdefault("asset_appearances", []).append(new_app)
+        self.refresh_appearance_selector()
+        apps = self.get_asset_appearances(ref_name=ref_name)
+        self.asset_appearance_var.set(f"{len(apps)}: {new_app_name}")
+        self.asset_appearance_name_var.set("")
+        self.persist_json(show_toast=False)
+        self.refresh_existing_appearances_box()
+        messagebox.showinfo("OK", "Neue Asset Appearance erstellt.")
+
+    def create_entity_appearance(self):
+        if not self.current_space or self.space_kind(self.current_space) != "entity":
+            messagebox.showwarning("Hinweis", "Bitte einen Entity-Space auswählen.")
+            return
+        ref_name = self.reference_space_var.get().strip()
+        ref_space = self.find_space(ref_name) if ref_name else None
+        if not ref_name or self.space_kind(ref_space) != "entity":
+            messagebox.showwarning("Hinweis", "Bitte einen Entity Reference Space auswählen.")
+            return
+
+        new_app_name = self.entity_appearance_name_var.get().strip() or "Appearance"
+        new_app = {"ref_entity": ref_name, "name": new_app_name, "axis_mappings": [], "boundary_point_mappings": []}
+        if self.entity_appearance_copy_var.get():
+            src_app = self.get_or_create_appearance(self.current_space, ref_name, create_if_missing=False)
+            if src_app:
+                new_app["axis_mappings"] = copy.deepcopy(src_app.get("axis_mappings", []))
+                new_app["boundary_point_mappings"] = copy.deepcopy(src_app.get("boundary_point_mappings", []))
+        self.current_space.setdefault("entity_appearances", []).append(new_app)
+        self.refresh_appearance_selector()
+        apps = self.get_entity_appearances_for_reference()
+        self.entity_appearance_var.set(f"{len(apps)}: {new_app_name}")
+        self.entity_appearance_name_var.set("")
+        self.persist_json(show_toast=False)
+        self.refresh_existing_appearances_box()
+        messagebox.showinfo("OK", "Neue Entity Appearance erstellt.")
+
+    def toggle_existing_appearances_panel(self):
+        if not hasattr(self, "existing_appearances_body"):
+            return
+        if self.existing_appearances_visible.get():
+            self.existing_appearances_body.grid()
+            self.existing_appearances_toggle_btn.configure(text="Hide Existing Mappings")
+        else:
+            self.existing_appearances_body.grid_remove()
+            self.existing_appearances_toggle_btn.configure(text="Show Existing Mappings")
+
+    def refresh_existing_appearances_box(self):
+        if not hasattr(self, "axis_tree") or not hasattr(self, "bnd_tree"):
+            return
+        self.refresh_axis_tree()
+        self.refresh_bnd_tree()
 
     def get_rel_access_url_candidate(self):
         """Bevorzugt die Datei des Reference Space; wenn dort keine vorhanden,
@@ -277,6 +464,8 @@ class SpotEditorApp:
             messagebox.showerror("Fehler", f"Datei konnte nicht geöffnet werden:\n{e}")
 
     def refresh_axis_tree(self):
+        if not hasattr(self, "axis_tree"):
+            return
         self.axis_tree.delete(*self.axis_tree.get_children())
         app = self.current_appearance(create_if_missing=False)
         if not app:
@@ -287,11 +476,12 @@ class SpotEditorApp:
                 m.get("source", {}).get("axis", ""),
                 m.get("target", {}).get("axis", ""),
                 str(m.get("target", {}).get("inverse", False)),
-                m.get("accuracy", ""),
-                m.get("angle", "")
+                m.get("accuracy", "")
             ))
 
     def refresh_bnd_tree(self):
+        if not hasattr(self, "bnd_tree"):
+            return
         self.bnd_tree.delete(*self.bnd_tree.get_children())
         app = self.current_appearance(create_if_missing=False)
         if not app:
@@ -304,11 +494,12 @@ class SpotEditorApp:
                 src.get("boundary", ""),
                 m.get("reloc_relation", ""),
                 m.get("reloc_relation_target", ""),
-                m.get("normalized_coordinate", ""),
                 m.get("accuracy", "")
             ))
 
     def on_axis_select(self, event=None):
+        if not hasattr(self, "axis_tree"):
+            return
         sel = self.axis_tree.selection()
         if not sel:
             return
@@ -323,9 +514,10 @@ class SpotEditorApp:
         self.tgt_axis_var.set(m.get("target", {}).get("axis", "X"))
         self.inverse_var.set(bool(m.get("target", {}).get("inverse", False)))
         self.acc_axis_var.set(m.get("accuracy", "None"))
-        self.angle_var.set("" if "angle" not in m else str(m.get("angle")))
 
     def on_bnd_select(self, event=None):
+        if not hasattr(self, "bnd_tree"):
+            return
         sel = self.bnd_tree.selection()
         if not sel:
             return
@@ -340,7 +532,6 @@ class SpotEditorApp:
         self.boundary_var.set(src.get("boundary", "Min"))
         self.relation_var.set(m.get("reloc_relation", ""))
         self.relation_target_var.set(m.get("reloc_relation_target", self.asset_name or ""))
-        self.norm_coord_var.set("" if "normalized_coordinate" not in m else str(m.get("normalized_coordinate")))
         self.acc_bnd_var.set(m.get("accuracy", "None"))
 
     def clear_axis_form(self):
@@ -349,7 +540,6 @@ class SpotEditorApp:
         self.tgt_axis_var.set("")
         self.inverse_var.set(False)
         self.acc_axis_var.set("None")
-        self.angle_var.set("")
 
     def clear_bnd_form(self):
         self.selected_bnd_index = None
@@ -357,7 +547,6 @@ class SpotEditorApp:
         self.boundary_var.set("")
         self.relation_var.set("")
         self.relation_target_var.set(self.asset_name or "")
-        self.norm_coord_var.set("")
         self.acc_bnd_var.set("None")
 
     def update_axis_mapping(self):
@@ -380,16 +569,6 @@ class SpotEditorApp:
                        "axis": self.tgt_axis_var.get(),
                        "inverse": bool(self.inverse_var.get())}
         m["accuracy"] = self.acc_axis_var.get()
-
-        angle_str = self.angle_var.get().strip()
-        if angle_str:
-            try:
-                m["angle"] = float(angle_str)
-            except ValueError:
-                messagebox.showwarning("Hinweis", "Angle muss eine Zahl sein.")
-                return
-        else:
-            m.pop("angle", None)
 
         self.persist_json(show_toast=False)
         self.refresh_axis_tree()
@@ -433,19 +612,6 @@ class SpotEditorApp:
         m["reloc_relation"] = self.relation_var.get()
         m["reloc_relation_target"] = self.relation_target_var.get().strip()
         m["accuracy"] = self.acc_bnd_var.get()
-
-        norm_str = self.norm_coord_var.get().strip()
-        if norm_str:
-            try:
-                val = float(norm_str)
-                if not (0.0 <= val <= 1.0):
-                    raise ValueError("out of range")
-                m["normalized_coordinate"] = val
-            except Exception:
-                messagebox.showwarning("Hinweis", "Normalized Coordinate muss eine Zahl zwischen 0 und 1 sein.")
-                return
-        else:
-            m.pop("normalized_coordinate", None)
 
         self.persist_json(show_toast=False)
         self.refresh_bnd_tree()
@@ -501,7 +667,7 @@ class SpotEditorApp:
             self._load_into_label(cur_full, self.cur_preview_label, side="cur")
         else:
             self.cur_preview_path_var.set("")
-            self.cur_preview_label.configure(image="", text="Keine Datei im Current Space.", fg="#dddddd")
+            self._set_preview_message(self.cur_preview_label, "Keine Datei im Current Space.", side="cur")
 
         # Reference Space
         self.ref_preview_original_image = None
@@ -520,10 +686,10 @@ class SpotEditorApp:
             self.ref_preview_label.configure(image="", text="Keine Datei im Reference Space.", fg="#dddddd")
 
 
-    def _load_into_label(self, full_path: Path, label: tk.Label, side: str):
+    def _load_into_label(self, full_path: Path, label, side: str):
         """Hilfsmethode: Datei laden und anzeigen (Bild/PDF-Hinweis). side = 'cur' oder 'ref'."""
         if not full_path.exists():
-            label.configure(image="", text=f"Datei nicht gefunden:\n{full_path}", fg="#dddddd")
+            self._set_preview_message(label, f"Datei nicht gefunden:\n{full_path}", side=side)
             return
 
         ext = full_path.suffix.lower()
@@ -547,22 +713,60 @@ class SpotEditorApp:
                 if ext in (".png", ".gif"):
                     try:
                         photo = tk.PhotoImage(file=str(full_path))
-                        label.configure(image=photo, text="")
-                        # Referenz halten
-                        if side == "cur":
-                            self.cur_preview_image_tk = photo
+                        if isinstance(label, tk.Canvas):
+                            label.delete("all")
+                            label.create_image(0, 0, image=photo, anchor="nw")
+                            if side == "cur":
+                                self.cur_preview_image_tk = photo
+                            else:
+                                self.ref_preview_image_tk = photo
+                            self._draw_static_axes(label)
                         else:
-                            self.ref_preview_image_tk = photo
+                            label.configure(image=photo, text="")
+                            # Referenz halten
+                            if side == "cur":
+                                self.cur_preview_image_tk = photo
+                            else:
+                                self.ref_preview_image_tk = photo
                     except Exception as e:
-                        label.configure(image="", text=f"Bild konnte nicht geladen werden:\n{e}", fg="#dddddd")
+                        self._set_preview_message(label, f"Bild konnte nicht geladen werden:\n{e}", side=side)
                 else:
-                    label.configure(image="", text="Bitte Pillow installieren: pip install pillow", fg="#dddddd")
+                    self._set_preview_message(label, "Bitte Pillow installieren: pip install pillow", side=side)
         elif ext == ".pdf":
-            label.configure(image="",
-                            text="PDF kann hier nicht inline angezeigt werden.\nBitte 'Datei öffnen' verwenden.",
-                            fg="#dddddd")
+            self._set_preview_message(label,
+                                      "PDF kann hier nicht inline angezeigt werden.\nBitte 'Datei öffnen' verwenden.",
+                                      side=side)
         else:
-            label.configure(image="", text=f"Nicht unterstützter Dateityp: {ext}", fg="#dddddd")
+            self._set_preview_message(label, f"Nicht unterstützter Dateityp: {ext}", side=side)
+
+    def _set_preview_message(self, widget, text: str, side: str):
+        if isinstance(widget, tk.Canvas):
+            widget.delete("all")
+            w = max(1, widget.winfo_width())
+            h = max(1, widget.winfo_height())
+            widget.create_text(w // 2, h // 2, text=text, fill="#dddddd", justify="center")
+            if side == "cur":
+                self._draw_static_axes(widget)
+            return
+        widget.configure(image="", text=text, fg="#dddddd")
+
+    def _draw_static_axes(self, canvas):
+        if not isinstance(canvas, tk.Canvas):
+            return
+        canvas.delete("axes_overlay")
+        w = max(1, canvas.winfo_width())
+        h = max(1, canvas.winfo_height())
+        pad = 18
+        x0 = pad
+        y0 = pad
+        x1 = max(x0 + 40, w - 48)
+        y1 = max(y0 + 40, h - 48)
+        canvas.create_line(x0, y0, x1, y0, fill="#d46a6a", width=4, arrow=tk.LAST, tags=("axes_overlay",))
+        canvas.create_line(x0, y0, x0, y1, fill="#78c96b", width=4, arrow=tk.LAST, tags=("axes_overlay",))
+        canvas.create_text(x1 + 14, y0, text="X", fill="white", font=("Segoe UI", 14, "bold"),
+                           anchor="w", tags=("axes_overlay",))
+        canvas.create_text(x0, y1 + 14, text="y", fill="white", font=("Segoe UI", 14, "bold"),
+                           anchor="n", tags=("axes_overlay",))
 
     def on_cur_preview_resize(self, _evt=None):
         if self.cur_preview_original_image is not None:
@@ -578,8 +782,8 @@ class SpotEditorApp:
     def render_ref_preview_fit(self):
         self._render_fit(self.ref_preview_original_image, self.ref_preview_label, which="ref")
 
-    def _render_fit(self, img: Image.Image, label: tk.Label, which: str):
-        """Skaliert proportional auf die verfügbare Fläche des Labels."""
+    def _render_fit(self, img: Image.Image, label, which: str):
+        """Skaliert proportional auf die verfügbare Fläche des Ziel-Widgets."""
         if img is None:
             return
         lw = max(1, label.winfo_width() - 8)
@@ -595,12 +799,23 @@ class SpotEditorApp:
         except Exception:
             resized = img.resize((new_w, new_h))
         photo = ImageTk.PhotoImage(resized)
-        label.configure(image=photo, text="")
-        # Referenz halten
-        if which == "cur":
-            self.cur_preview_image_tk = photo
+        if isinstance(label, tk.Canvas):
+            label.delete("all")
+            canvas_w = max(1, label.winfo_width())
+            canvas_h = max(1, label.winfo_height())
+            label.create_image(canvas_w // 2, canvas_h // 2, image=photo, anchor="center")
+            label.image = photo
+            if which == "cur":
+                self.cur_preview_image_tk = photo
+                self._draw_static_axes(label)
+            else:
+                self.ref_preview_image_tk = photo
         else:
-            self.ref_preview_image_tk = photo
+            label.configure(image=photo, text="")
+            if which == "cur":
+                self.cur_preview_image_tk = photo
+            else:
+                self.ref_preview_image_tk = photo
 
     def open_cur_preview_file(self):
         p = self.cur_preview_current_path
@@ -696,17 +911,39 @@ class SpotEditorApp:
         paned = tk.PanedWindow(container, orient="horizontal", sashwidth=8)
         paned.pack(fill="both", expand=True)
 
-        # LINKER PANE: Controls
-        left = ttk.Frame(paned, padding=10)
-        left.columnconfigure(0, weight=1)
-        left.columnconfigure(1, weight=1)
+        # LINKER PANE: Controls (scrollable)
+        left_container = ttk.Frame(paned)
+        left_container.columnconfigure(0, weight=1)
+        left_container.rowconfigure(0, weight=1)
+
+        # Canvas + vertical scrollbar for left controls
+        left_canvas = tk.Canvas(left_container, borderwidth=0, highlightthickness=0)
+        left_vscroll = ttk.Scrollbar(left_container, orient="vertical", command=left_canvas.yview)
+        left_canvas.configure(yscrollcommand=left_vscroll.set)
+        left_canvas.grid(row=0, column=0, sticky="nsew")
+        left_vscroll.grid(row=0, column=1, sticky="ns")
+
+        # Inner frame that holds actual controls (kept named 'left' to minimize further changes)
+        left = ttk.Frame(left_canvas, padding=10)
+        left_window = left_canvas.create_window((0, 0), window=left, anchor="nw")
+
+        def _on_left_config(_evt=None):
+            left_canvas.configure(scrollregion=left_canvas.bbox("all"))
+            try:
+                left_canvas.itemconfig(left_window, width=left_canvas.winfo_width())
+            except Exception:
+                pass
+        left.bind("<Configure>", _on_left_config)
+
+        # Mouse wheel scrolling (Windows)
+        left_canvas.bind_all("<MouseWheel>", lambda e: left_canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
 
         # RECHTER PANE: Preview (oben/unten)
         right = ttk.Frame(paned, padding=8)
         right.columnconfigure(0, weight=1)
         right.rowconfigure(0, weight=1)  # der Preview-Teil wächst mit
 
-        paned.add(left, minsize=520)  # Mindestbreite für Controls
+        paned.add(left_container, minsize=520)  # Mindestbreite für Controls
         paned.add(right, minsize=320)  # Mindestbreite für Preview
 
         # Reference Space selection
@@ -718,24 +955,104 @@ class SpotEditorApp:
                                                   textvariable=self.reference_space_var, state="readonly", width=40)
         self.reference_space_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
         self.reference_space_combo.bind("<<ComboboxSelected>>",
-                                        lambda e: (self.update_reference_info(), self.update_history_box(),
+                                        lambda e: (self.refresh_appearance_selector(), self.update_reference_info(), self.update_history_box(),
                                                    self.update_dual_preview()))
         ref_frame.columnconfigure(1, weight=1)
 
+        self.appearance_frame = ttk.LabelFrame(left, text="Appearances", padding=10)
+        self.appearance_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+        self.appearance_frame.columnconfigure(1, weight=1)
+
+        self.asset_appearance_frame = ttk.LabelFrame(self.appearance_frame, text="Asset Appearances", padding=10)
+        self.asset_appearance_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+        self.asset_appearance_frame.columnconfigure(1, weight=1)
+        ttk.Label(self.asset_appearance_frame, text="Appearance Name").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        self.asset_appearance_name_entry = ttk.Entry(self.asset_appearance_frame, textvariable=self.asset_appearance_name_var, width=28)
+        self.asset_appearance_name_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+        ttk.Label(self.asset_appearance_frame, text="Active Appearance").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        self.asset_appearance_combo = ttk.Combobox(self.asset_appearance_frame, textvariable=self.asset_appearance_var,
+                                                   state="readonly", width=28)
+        self.asset_appearance_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+        self.asset_appearance_combo.bind("<<ComboboxSelected>>", self.on_asset_appearance_selected)
+        ttk.Checkbutton(
+            self.asset_appearance_frame,
+            text="Copy values from selected appearance",
+            variable=self.asset_appearance_copy_var
+        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=(0, 5))
+        self.asset_appearance_create_btn = ttk.Button(self.asset_appearance_frame, text="Create New Asset Appearance",
+                                                      command=self.create_asset_appearance)
+        self.asset_appearance_create_btn.grid(row=0, column=2, rowspan=3, sticky="ns", padx=5, pady=5)
+
+        self.entity_appearance_frame = ttk.LabelFrame(self.appearance_frame, text="Entity Appearances", padding=10)
+        self.entity_appearance_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+        self.entity_appearance_frame.columnconfigure(1, weight=1)
+        ttk.Label(self.entity_appearance_frame, text="Appearance Name").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        self.entity_appearance_name_entry = ttk.Entry(self.entity_appearance_frame, textvariable=self.entity_appearance_name_var, width=28)
+        self.entity_appearance_name_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+        ttk.Label(self.entity_appearance_frame, text="Active Appearance").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        self.entity_appearance_combo = ttk.Combobox(self.entity_appearance_frame, textvariable=self.entity_appearance_var,
+                                                    state="readonly", width=28)
+        self.entity_appearance_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+        self.entity_appearance_combo.bind("<<ComboboxSelected>>", self.on_entity_appearance_selected)
+        ttk.Checkbutton(
+            self.entity_appearance_frame,
+            text="Copy values from selected appearance",
+            variable=self.entity_appearance_copy_var
+        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=(0, 5))
+        self.entity_appearance_create_btn = ttk.Button(self.entity_appearance_frame, text="Create New Entity Appearance",
+                                                       command=self.create_entity_appearance)
+        self.entity_appearance_create_btn.grid(row=0, column=2, rowspan=3, sticky="ns", padx=5, pady=5)
+
+        self.existing_appearances_visible = tk.BooleanVar(value=False)
+        self.existing_appearances_toggle_btn = ttk.Button(
+            left,
+            text="Show Existing Mappings",
+            command=lambda: (self.existing_appearances_visible.set(not self.existing_appearances_visible.get()),
+                             self.toggle_existing_appearances_panel())
+        )
+        self.existing_appearances_toggle_btn.grid(row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=(0, 5))
+        self.existing_appearances_body = ttk.LabelFrame(left, text="Existing Mappings in JSON", padding=10)
+        self.existing_appearances_body.grid(row=3, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+        self.existing_appearances_body.columnconfigure(0, weight=1)
+
+        axis_existing = ttk.LabelFrame(self.existing_appearances_body, text="Axis Mappings", padding=8)
+        axis_existing.grid(row=0, column=0, sticky="ew", padx=4, pady=4)
+        axis_existing.columnconfigure(0, weight=1)
+        axis_cols = ("#", "source", "target", "inverse", "accuracy")
+        self.axis_tree = ttk.Treeview(axis_existing, columns=axis_cols, show="headings", height=6)
+        for c, w in zip(axis_cols, (40, 80, 80, 70, 90)):
+            self.axis_tree.heading(c, text=c)
+            self.axis_tree.column(c, width=w, anchor="center")
+        self.axis_tree.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=4, pady=4)
+        self.axis_tree.bind("<<TreeviewSelect>>", self.on_axis_select)
+        axis_existing_buttons = ttk.Frame(axis_existing)
+        axis_existing_buttons.grid(row=1, column=0, columnspan=2, sticky="e", padx=4, pady=4)
+        ttk.Button(axis_existing_buttons, text="New", command=self.clear_axis_form).pack(side="left", padx=3)
+        ttk.Button(axis_existing_buttons, text="Update", command=self.update_axis_mapping).pack(side="left", padx=3)
+        ttk.Button(axis_existing_buttons, text="Delete", command=self.delete_axis_mapping).pack(side="left", padx=3)
+
+        bnd_existing = ttk.LabelFrame(self.existing_appearances_body, text="Boundary Point Mappings", padding=8)
+        bnd_existing.grid(row=1, column=0, sticky="ew", padx=4, pady=4)
+        bnd_existing.columnconfigure(0, weight=1)
+        bnd_cols = ("#", "src_axis", "boundary", "relation", "target", "accuracy")
+        self.bnd_tree = ttk.Treeview(bnd_existing, columns=bnd_cols, show="headings", height=6)
+        for c, w in zip(bnd_cols, (40, 80, 90, 140, 160, 90)):
+            self.bnd_tree.heading(c, text=c)
+            self.bnd_tree.column(c, width=w, anchor="center")
+        self.bnd_tree.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=4, pady=4)
+        self.bnd_tree.bind("<<TreeviewSelect>>", self.on_bnd_select)
+        bnd_existing_buttons = ttk.Frame(bnd_existing)
+        bnd_existing_buttons.grid(row=1, column=0, columnspan=2, sticky="e", padx=4, pady=4)
+        ttk.Button(bnd_existing_buttons, text="New", command=self.clear_bnd_form).pack(side="left", padx=3)
+        ttk.Button(bnd_existing_buttons, text="Update", command=self.update_boundary_mapping).pack(side="left", padx=3)
+        ttk.Button(bnd_existing_buttons, text="Delete", command=self.delete_boundary_mapping).pack(side="left", padx=3)
+
+        self.existing_appearances_body.grid_remove()
+
         # Info boxes
-        info_axis = ttk.LabelFrame(left, text="Info: Reference Space Axis Directions", padding=10)
-        info_axis.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        self.info_axis_text = tk.Text(info_axis, height=6, width=40)
-        self.info_axis_text.pack(fill="both", expand=True)
-
-        info_history = ttk.LabelFrame(left, text="History of Submitted Mappings", padding=10)
-        info_history.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
-        self.history_list = tk.Text(info_history, height=6, width=40)
-        self.history_list.pack(fill="both", expand=True)
-
         # Axis Mappings
         axis_frame = ttk.LabelFrame(left, text="Axis Mappings", padding=10)
-        axis_frame.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
+        axis_frame.grid(row=4, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
         ttk.Label(axis_frame, text="Source Axis").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.src_axis_var = tk.StringVar(value=None)
         ttk.Combobox(axis_frame, values=AXES, textvariable=self.src_axis_var, state="readonly", width=20) \
@@ -753,29 +1070,16 @@ class SpotEditorApp:
         acc_frame.grid(row=3, column=1, sticky="w", padx=5, pady=5)
         for acc in ACCURACY:
             ttk.Radiobutton(acc_frame, text=acc, value=acc, variable=self.acc_axis_var).pack(side="left", padx=2)
-        ttk.Label(axis_frame, text="Angle (optional)").grid(row=4, column=0, sticky="w", padx=5, pady=5)
-        self.angle_var = tk.StringVar()
-        ttk.Entry(axis_frame, textvariable=self.angle_var, width=20).grid(row=4, column=1, sticky="w", padx=5, pady=5)
         ttk.Button(axis_frame, text="Submit Axis Mapping", command=self.submit_axis_mapping) \
-            .grid(row=5, column=1, sticky="e", padx=5, pady=10)
-
-        cols = ("#", "source", "target", "inverse", "accuracy", "angle")
-        self.axis_tree = ttk.Treeview(axis_frame, columns=cols, show="headings", height=8)
-        for c, w in zip(cols, (40, 80, 80, 70, 90, 80)):
-            self.axis_tree.heading(c, text=c)
-            self.axis_tree.column(c, width=w, anchor="center")
-        self.axis_tree.grid(row=6, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
-        self.axis_tree.bind("<<TreeviewSelect>>", self.on_axis_select)
+            .grid(row=4, column=1, sticky="e", padx=5, pady=10)
 
         axis_btns = ttk.Frame(axis_frame)
-        axis_btns.grid(row=7, column=0, columnspan=2, sticky="e", padx=5, pady=5)
+        axis_btns.grid(row=5, column=0, columnspan=2, sticky="e", padx=5, pady=5)
         ttk.Button(axis_btns, text="Neu", command=self.clear_axis_form).pack(side="left", padx=3)
-        ttk.Button(axis_btns, text="Aktualisieren", command=self.update_axis_mapping).pack(side="left", padx=3)
-        ttk.Button(axis_btns, text="Löschen", command=self.delete_axis_mapping).pack(side="left", padx=3)
 
         # Boundary Point Mappings
         bnd_frame = ttk.LabelFrame(left, text="Boundary Point Mappings", padding=10)
-        bnd_frame.grid(row=2, column=1, sticky="nsew", padx=5, pady=5)
+        bnd_frame.grid(row=5, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
         ttk.Label(bnd_frame, text="Source Axis").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.bsrc_axis_var = tk.StringVar(value=None)
         ttk.Combobox(bnd_frame, values=AXES, textvariable=self.bsrc_axis_var, state="readonly", width=20) \
@@ -793,36 +1097,25 @@ class SpotEditorApp:
         self.relation_target_combo = ttk.Combobox(bnd_frame, values=self.reference_space_names,
                                                   textvariable=self.relation_target_var, state="readonly", width=30)
         self.relation_target_combo.grid(row=3, column=1, sticky="w", padx=5, pady=5)
-        ttk.Label(bnd_frame, text="Normalized Coordinate (0..1)").grid(row=4, column=0, sticky="w", padx=5, pady=5)
-        self.norm_coord_var = tk.StringVar()
-        ttk.Entry(bnd_frame, textvariable=self.norm_coord_var, width=20).grid(row=4, column=1, sticky="w", padx=5,
-                                                                              pady=5)
-        ttk.Label(bnd_frame, text="Accuracy").grid(row=5, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(bnd_frame, text="Accuracy").grid(row=4, column=0, sticky="w", padx=5, pady=5)
         self.acc_bnd_var = tk.StringVar(value="None")
         acc_bnd_frame = ttk.Frame(bnd_frame);
-        acc_bnd_frame.grid(row=5, column=1, sticky="w", padx=5, pady=5)
+        acc_bnd_frame.grid(row=4, column=1, sticky="w", padx=5, pady=5)
         for acc in ACCURACY:
             ttk.Radiobutton(acc_bnd_frame, text=acc, value=acc, variable=self.acc_bnd_var).pack(side="left", padx=2)
         ttk.Button(bnd_frame, text="Submit Boundary Point Mapping", command=self.submit_boundary_mapping) \
-            .grid(row=6, column=1, sticky="e", padx=5, pady=10)
+            .grid(row=5, column=1, sticky="e", padx=5, pady=10)
 
-        bcols = ("#", "src_axis", "boundary", "relation", "target", "norm", "accuracy")
-        self.bnd_tree = ttk.Treeview(bnd_frame, columns=bcols, show="headings", height=8)
-        for c, w in zip(bcols, (40, 80, 90, 140, 160, 80, 90)):
-            self.bnd_tree.heading(c, text=c)
-            self.bnd_tree.column(c, width=w, anchor="center")
-        self.bnd_tree.grid(row=7, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
-        self.bnd_tree.bind("<<TreeviewSelect>>", self.on_bnd_select)
+        # Existing boundary mappings list hidden per request
+        ttk.Label(bnd_frame, text="(Existing mappings hidden)").grid(row=6, column=0, columnspan=2, padx=5, pady=5)
 
         bnd_btns = ttk.Frame(bnd_frame)
-        bnd_btns.grid(row=8, column=0, columnspan=2, sticky="e", padx=5, pady=5)
+        bnd_btns.grid(row=7, column=0, columnspan=2, sticky="e", padx=5, pady=5)
         ttk.Button(bnd_btns, text="Neu", command=self.clear_bnd_form).pack(side="left", padx=3)
-        ttk.Button(bnd_btns, text="Aktualisieren", command=self.update_boundary_mapping).pack(side="left", padx=3)
-        ttk.Button(bnd_btns, text="Löschen", command=self.delete_boundary_mapping).pack(side="left", padx=3)
 
         # Export
         export_frame = ttk.Frame(left)
-        export_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=5, pady=10)
+        export_frame.grid(row=6, column=0, columnspan=2, sticky="ew", padx=5, pady=10)
         ttk.Button(export_frame, text="Show JSON", command=self.show_json).pack(side="right", padx=5)
         ttk.Button(export_frame, text="Speichern", command=lambda: self.persist_json(show_toast=True)).pack(
             side="right", padx=5)
@@ -858,7 +1151,7 @@ class SpotEditorApp:
                    command=lambda: self.copy_to_clipboard(self.cur_preview_path_var.get())).pack(side="left", padx=3)
 
         # Bildfläche
-        self.cur_preview_label = tk.Label(cur_box, anchor="center", relief="sunken", bg="#202020")
+        self.cur_preview_label = tk.Canvas(cur_box, relief="sunken", bg="#202020", highlightthickness=0)
         self.cur_preview_label.grid(row=2, column=0, sticky="nsew")
         self.cur_preview_label.bind("<Configure>", self.on_cur_preview_resize)
 
@@ -963,17 +1256,11 @@ class SpotEditorApp:
         tgt_axis = self.tgt_axis_var.get()
         inverse = bool(self.inverse_var.get())
         acc = self.acc_axis_var.get()
-        angle_str = self.angle_var.get().strip()
 
         mapping = {"source": {"axis": src_axis}, "target": {"object": ref_name, "axis": tgt_axis, "inverse": inverse}, "accuracy": acc}
-        if angle_str:
-            try:
-                mapping["angle"] = float(angle_str)
-            except ValueError:
-                messagebox.showwarning("Hinweis", "Angle muss eine Zahl sein.")
-                return
 
         app.setdefault("axis_mappings", []).append(mapping)
+        self.refresh_appearance_selector()
         self.update_history_box()
         self.refresh_axis_tree()
         self.persist_json(show_toast=False)
@@ -998,72 +1285,25 @@ class SpotEditorApp:
         relation = self.relation_var.get()
         rel_target = self.relation_target_var.get().strip()
         acc = self.acc_bnd_var.get()
-        norm_str = self.norm_coord_var.get().strip()
 
         mapping = {"source": {"axis": src_axis, "boundary": boundary}, "reloc_relation": relation, "reloc_relation_target": rel_target, "accuracy": acc}
-        if norm_str:
-            try:
-                val = float(norm_str)
-                if not (0.0 <= val <= 1.0):
-                    raise ValueError("out of range")
-                mapping["normalized_coordinate"] = val
-            except Exception:
-                messagebox.showwarning("Hinweis", "Normalized Coordinate muss eine Zahl zwischen 0 und 1 sein.")
-                return
 
         app.setdefault("boundary_point_mappings", []).append(mapping)
+        self.refresh_appearance_selector()
         self.update_history_box()
         self.refresh_bnd_tree()
         self.persist_json(show_toast=False)
         messagebox.showinfo("OK", "Boundary Point Mapping hinzugefügt und gespeichert.")
 
     def update_reference_info(self):
-        self.info_axis_text.config(state="normal")
-        self.info_axis_text.delete("1.0", "end")
-        ref = self.reference_space_var.get().strip()
-        axes = self.get_axes_directions(ref)
-        if axes:
-            self.info_axis_text.insert("end", f"X Axis : {axes.get('X','-')}\n")
-            self.info_axis_text.insert("end", f"Y Axis : {axes.get('Y','-')}\n")
-            self.info_axis_text.insert("end", f"Z Axis : {axes.get('Z','-')}\n")
-        else:
-            self.info_axis_text.insert("end", "Keine Axis-Directions verfügbar.\n")
-        self.info_axis_text.config(state="disabled")
+        # Info box removed — refresh mapping lists and previews
         self.refresh_axis_tree()
         self.refresh_bnd_tree()
+        self.update_dual_preview()
 
     def update_history_box(self):
-        self.history_list.config(state="normal")
-        self.history_list.delete("1.0", "end")
-        if not self.current_space:
-            self.history_list.insert("end", "Kein Space ausgewählt.\n")
-            self.history_list.config(state="disabled")
-            return
-        ref_name = self.reference_space_var.get().strip()
-        if not ref_name:
-            self.history_list.insert("end", "Kein Reference Space ausgewählt.\n")
-            self.history_list.config(state="disabled")
-            return
-        app = self.get_or_create_appearance(self.current_space, ref_name, create_if_missing=False)
-        if not app:
-            self.history_list.insert("end", "Keine Mappings für diese Referenz.\n")
-            self.history_list.config(state="disabled")
-            return
-        axis_m = app.get("axis_mappings", [])
-        bnd_m = app.get("boundary_point_mappings", [])
-        self.history_list.insert("end", f"AxisMappings ({len(axis_m)}):\n")
-        for i, m in enumerate(axis_m, 1):
-            self.history_list.insert("end", f"  {i}. source_{m['source']['axis']} -> target_{m['target']['axis']} "
-                                            f"(inverse={m['target'].get('inverse')}, acc={m.get('accuracy')}"
-                                            f"{', angle='+str(m.get('angle')) if 'angle' in m else ''})\n")
-        self.history_list.insert("end", f"\nBoundaryPointMappings ({len(bnd_m)}):\n")
-        for i, m in enumerate(bnd_m, 1):
-            src = m["source"]
-            self.history_list.insert("end", f"  {i}. {src['axis']}/{src['boundary']} -> {m.get('reloc_relation')} "
-                                            f"to {m.get('reloc_relation_target')} "
-                                            f"{'(norm='+str(m.get('normalized_coordinate'))+')' if 'normalized_coordinate' in m else ''} "
-                                            f"(acc={m.get('accuracy')})\n")
-        self.history_list.config(state="disabled")
+        # History view removed per UI simplification request — keep function as no-op for compatibility
+        return
 
     def show_json(self):
         top = tk.Toplevel(self.root)
@@ -1082,6 +1322,8 @@ class SpotEditorApp:
 
 def run_editor(input_json_path, theme="light"):
     root = tk.Tk()
+    root.geometry("1200x800")
+    root.minsize(900,600)
     # Optional theme
     try:
         root.tk.call("source", "azure.tcl")
