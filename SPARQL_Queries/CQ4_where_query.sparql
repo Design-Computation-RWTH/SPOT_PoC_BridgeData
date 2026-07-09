@@ -1,4 +1,4 @@
-# CQ4: Where was \textit{this picture} taken?
+# CQ4: Where was \textit{this Image} taken and in which direction does it view?
 PREFIX : <http://example.org/>
 PREFIX spot: <https://w3id.org/spot#>
 PREFIX reloc: <https://w3id.org/reloc#>
@@ -7,23 +7,34 @@ PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX dcat: <http://www.w3.org/ns/dcat#>
 PREFIX dcterms: <http://purl.org/dc/terms/>
 
-SELECT ?x
-       (GROUP_CONCAT(DISTINCT ?relationLabel; separator=", ") AS ?dirProps)
+SELECT ?img
+       (GROUP_CONCAT(DISTINCT ?relationLabel; separator=", ") AS ?cameraLocation) ?viewingDirection ?viewingDirectionAccuracy
        ?refSpace ?path
 WHERE {
-  # Filter for Image, instead of one input picture
-  ?x a spot:PointSpace ;
+  ?img a spot:PointSpace ;
      dcterms:type "image";
      dcat:accessURL ?path ;
-     spot:hasAppearance ?appPic .
-      {
-      ?appPic spot:appearsIn ?refSpace ;
-              spot-am:hasBoundaryPointMapping ?bpmPic .
-      ?bpmPic ?directionalProperty ?refSpace .
-      ?directionalProperty rdfs:subPropertyOf* reloc:directionalRelation;
-                           rdfs:label ?relationLabel.
-      FILTER langMatches(lang(?relationLabel), "en")
-      }
+     # zaxis indicating viewing direction
+     spot:hasZAxis ?imgZAxis;
+     spot:hasAppearance ?appImg .
+
+     ?appImg spot:appearsIn ?refSpace ;
+          spot-am:hasBoundaryPointMapping ?bpmImg ;
+          spot-am:hasAxisMapping ?amImg.
+    ?bpmImg ?directionalProperty ?refSpace .
+    ?directionalProperty rdfs:subPropertyOf* reloc:directionalRelation;
+                       rdfs:label ?relationLabel.
+     FILTER langMatches(lang(?relationLabel), "en")
+
+    ?amImg spot-am:hasSourceAxis ?imgZAxis;
+           spot-am:hasTargetAxis ?refSpaceAxis;
+           spot-am:hasAxisRelationType ?relType;
+            spot-am:hasAccuracy ?viewingDirectionAccuracy.
+    ?refSpaceAxis spot:hasDirection ?refSpaceAxisDir.
+    ?refSpaceAxisDir spot:isInverseDirectionOf ?refSpaceAxisInvDir.
+    BIND(
+      IF(?relType = spot-am:Antiparallel, ?refSpaceAxisInvDir, ?refSpaceAxisDir) AS ?viewingDirection
+    )
 }
-GROUP BY ?x ?refSpace ?assetSpaceRef ?path
-ORDER BY ?x
+GROUP BY ?img ?viewingDirection ?viewingDirectionAccuracy ?refSpace ?path
+ORDER BY ?img
