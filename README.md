@@ -1,4 +1,4 @@
-## Repository Contents
+# Repository Contents
 
   ## Graph Creation Scripts
   - Python scripts for creating instance graphs based on the ontologies
