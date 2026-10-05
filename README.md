@@ -18,7 +18,6 @@ This project is licensed under the [Creative Commons Attribution 4.0 Internation
 
 ## Cite as
 - Publication:
-- Dataset on Zenodo: 
 
 ## Contact 
 - Anne Göbels (goebels@dc.rwth-aachen.de) 
